@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RPS Battle: God Mode</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Merriweather:wght@400;700&display=swap" rel="stylesheet">
+    <script src="/socket.io/socket.io.js"></script>
+
+    <style>
+        /* --- "BLOODY" UI THEME --- */
+        :root {
+            --primary-color: #D4AF37; --success-color: #228B22; --danger-color: #B22222; --warning-color: #ffc107; --special-color: #9f5afd; --light-color: #f0f0f0; --dark-color: #1a1a1a;
+            --gambit-red: var(--danger-color); --gambit-green: var(--success-color); --gambit-purple: var(--special-color);
+            --bg-base: linear-gradient(135deg, #c31432 0%, #240b36 100%); --bg-low-hp: linear-gradient(135deg, #B22222 0%, #4d0b0b 100%); --bg-win-streak: linear-gradient(135deg, #D4AF37 0%, #fc4a1a 100%); --bg-lose-streak: linear-gradient(135deg, #485461 0%, #29323c 100%);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body { font-family: 'Merriweather', serif; background: var(--bg-base); color: var(--light-color); display: grid; place-items: center; min-height: 100vh; padding: 1rem; overflow-x: hidden; transition: background 0.5s ease-out; }
+        body.low-hp { background: var(--bg-low-hp); animation: pulse-red 1.5s infinite; } body.win-streak { background: var(--bg-win-streak); } body.lose-streak { background: var(--bg-lose-streak); }
+        @keyframes pulse-red { 0%{background-color:rgba(178,34,34,0.5)}50%{background-color:rgba(178,34,34,0.8)}100%{background-color:rgba(178,34,34,0.5)} }
+        #screen-flash { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: white; opacity: 0; z-index: 999; pointer-events: none; transition: opacity 0.3s ease; } #screen-flash.flash { animation: flash-animation 0.3s ease-out; } @keyframes flash-animation { 0%{opacity:0.7}100%{opacity:0} }
+        #game-container { background: var(--dark-color); border: 2px solid var(--primary-color); padding: 2rem; border-radius: 16px; box-shadow: 0 0 25px rgba(212, 175, 55, 0.3); width: 100%; max-width: 650px; text-align: center; position: relative; z-index: 1; margin: auto; }
+        .page { display: none; } .page.active { display: block; animation: page-fade-in 0.5s ease-out; }
+        @keyframes page-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+        h1, h2, h3 { font-family: 'Cinzel', serif; font-weight: 700; }
+        h1 { color: var(--primary-color); margin-bottom: 0.5rem; font-size: 2rem; }
+        h2 { color: var(--light-color); margin-bottom: 1.5rem; font-size: 1.5rem; }
+        h3 { color: #ccc; margin-top: 1.5rem; margin-bottom: 0.5rem; font-size: 1.1rem; }
+        p { color: #ccc; line-height: 1.6; }
+
+        #final-result { font-family: 'Cinzel', serif; font-size: 2.5rem; font-weight: 700; margin: 1.5rem 0; } #final-result.win { color: var(--success-color); } #final-result.lose { color: var(--danger-color); } #final-result.tie { color: var(--warning-color); }
+        .btn { font-family: 'Cinzel', serif; font-size: 1.1rem; font-weight: 700; padding: 0.7rem 1.3rem; cursor: pointer; border: 2px solid var(--primary-color); border-radius: 8px; color: var(--primary-color); background: transparent; transition: all 0.3s ease; margin: 0.5rem; display: inline-block; text-decoration: none; } .btn:active { transform: scale(0.98); } .btn:hover { background: var(--primary-color); color: var(--dark-color); box-shadow: 0 0 15px var(--primary-color); }
+        .btn-green { border-color: var(--success-color); color: var(--success-color); } .btn-green:hover { background: var(--success-color); color: var(--light-color); box-shadow: 0 0 15px var(--success-color); }
+        .btn-blue { border-color: #0d6efd; color: #0d6efd; } .btn-blue:hover { background: #0d6efd; color: var(--light-color); box-shadow: 0 0 15px #0d6efd; }
+        .btn-icon { position: absolute; top: 1rem; left: 1rem; font-size: 1.5rem; font-weight: 600; padding: 0; width: 35px; height: 35px; line-height: 35px; text-align: center; cursor: pointer; border: 2px solid #555; border-radius: 50%; background-color: var(--dark-color); color: #aaa; transition: all 0.2s ease; z-index: 10; } .btn-icon:hover { border-color: var(--primary-color); color: var(--primary-color); box-shadow: 0 0 10px var(--primary-color); }
+
+        /* --- Page Specific Styles --- */
+        #page-landing h1 { font-size: clamp(2rem, 6vw, 3rem); margin-bottom: 2rem; }
+        #page-landing .btn { font-size: 1.3rem; padding: 1rem 2rem; }
+
+        #page-rules { text-align: left; max-height: 70vh; overflow-y: auto; padding: 1rem; padding-top: 3rem; scrollbar-width: thin; scrollbar-color: var(--primary-color) #333; }
+        #page-rules::-webkit-scrollbar { width: 8px; } #page-rules::-webkit-scrollbar-track { background: #333; } #page-rules::-webkit-scrollbar-thumb { background-color: var(--primary-color); border-radius: 4px; }
+        #page-rules h2 { text-align: center; font-size: 1.8rem; }
+        #page-rules h3 { font-size: 1.3rem; color: var(--primary-color); border-bottom: 1px solid #555; padding-bottom: 0.3rem; margin-top: 2rem; }
+        #page-rules ul { list-style-type: none; padding-left: 0; margin-top: 0.5rem;}
+        #page-rules ul li { position: relative; padding-left: 2rem; margin-bottom: 1rem; font-size: 0.9rem; color: #ccc; }
+        #page-rules ul li::before { content: '⚔️'; position: absolute; left: 0; top: 0; font-size: 1rem; line-height: 1.6; color: var(--primary-color); opacity: 0.8; }
+        #page-rules li strong { color: var(--light-color); }
+        .rules-sublist { list-style-type: none; padding-left: 1.5rem !important; margin-top: 0.5rem; }
+        .rules-sublist li::before { content: '›'; color: var(--warning-color); font-weight: bold;}
+        #page-rules .text-center { text-align: center; margin-top: 1.5rem; }
+
+        #page-setup h2 { font-size: 1.8rem; }
+        #page-setup .mode-selection { display: flex; justify-content: center; gap: 1rem; margin-bottom: 1.5rem; }
+        #page-setup .common-options { margin-bottom: 1.5rem; border-top: 1px solid #555; border-bottom: 1px solid #555; padding: 1.5rem 0;}
+        #page-setup .difficulty-options.hidden { display: none !important; }
+        #page-setup .multiplayer-options { padding-top: 1rem; }
+        #page-setup .input-group { margin-bottom: 1rem; } #page-setup label { display: block; margin-bottom: .5rem; font-weight: bold; } #page-setup input[type="text"] { font-family: 'Merriweather', serif; font-size: 1rem; padding: 0.5rem; border-radius: 4px; border: 1px solid #555; background: #333; color: var(--light-color); width: 80%; max-width: 200px; }
+        .selection-group { display: flex; justify-content: center; flex-wrap: wrap; margin-bottom: 1rem; gap: 0.5rem; } .selection-group button { font-family: 'Merriweather', serif; font-size: 0.9rem; padding: 0.4rem 0.8rem; border: 2px solid #555; background: transparent; color: #aaa; border-radius: 8px; cursor: pointer; transition: all 0.2s ease; } .selection-group button:hover { border-color: #999; color: var(--light-color); } .selection-group button.selected { border-color: var(--primary-color); background: var(--primary-color); color: var(--dark-color); font-weight: 700; box-shadow: 0 0 10px var(--primary-color); }
+        .selection-group button.elem-fire.selected { border-color: #fd7e14; background: #fd7e14; } .selection-group button.elem-water.selected { border-color: #0d6efd; background: #0d6efd; } .selection-group button.elem-grass.selected { border-color: #198754; background: #198754; }
+        #waiting-message { margin-top: 1rem; font-style: italic; color: var(--warning-color); font-size: 0.9rem; } #error-message { margin-top: 0.5rem; color: var(--danger-color); font-weight: bold; font-size: 0.9rem;}
+        #page-setup .action-buttons { margin-top: 1.5rem; }
+
+
+        #status-bar { display: flex; flex-direction: row; justify-content: space-between; gap: 1rem; margin: 1rem 0; }
+        .status-panel { flex: 1; background: #2b2b2b; padding: 0.75rem; border-radius: 8px; position: relative; } .status-panel h2 { font-size: 1rem; margin-bottom: 0.5rem; color: var(--light-color); } #player-panel { border-bottom: 4px solid var(--primary-color); } #opponent-panel { border-bottom: 4px solid var(--danger-color); }
+        .element-icon { position: absolute; top: 0.4rem; right: 0.4rem; font-size: 1.2rem; opacity: 0.7; }
+        .bar-container { width: 100%; background: #111; border-radius: 10px; height: 18px; margin-bottom: 0.5rem; overflow: hidden; position: relative; } .bar-label { position: absolute; left: 50%; transform: translateX(-50%); color: #fff; font-size: 0.75rem; font-weight: 700; line-height: 18px; z-index: 1; text-shadow: 0 0 3px black; } .bar-fill { height: 100%; width: 100%; border-radius: 10px 0 0 10px; transition: width 0.3s ease-out; box-shadow: inset 0 0 5px rgba(0,0,0,0.5); }
+        #player-hp-bar .bar-fill { background-color: var(--success-color); box-shadow: 0 0 10px var(--success-color); } #opponent-hp-bar .bar-fill { background-color: var(--success-color); box-shadow: 0 0 10px var(--success-color); } #player-special-bar .bar-fill { background-color: var(--special-color); box-shadow: 0 0 10px var(--special-color); } #opponent-special-bar .bar-fill { background-color: var(--special-color); box-shadow: 0 0 10px var(--special-color); }
+
+        /* -- CORRECTED HAND ANIMATION CSS -- */
+        #hand-animation-container { position: relative; height: 100px; margin: 0.5rem 0 1rem 0; display: flex; justify-content: space-between; align-items: center; padding: 0 10%; }
+        .hand-wrapper {
+             position: relative; width: 100px; height: 100px; display: flex; justify-content: center; align-items: center;
+             opacity: 0; /* Start hidden */
+             transform: translateX(-100px) translateZ(0); /* Default start position (player) */
+             /* Removed transition here */
+        }
+        #opponent-hand-wrapper {
+             transform: translateX(100px) translateZ(0); /* Opponent start position */
+        }
+        .hand-wrapper.animate-in {
+            /* Animation applied directly */
+            animation: slideInLeft 0.5s ease-out forwards;
+        }
+        #opponent-hand-wrapper.animate-in {
+             animation-name: slideInRight; /* Use specific animation for opponent */
+        }
+        .hand-wrapper.shaking .hand { animation: shake 0.2s infinite alternate ease-in-out; }
+        .hand-wrapper .hand { font-size: 4rem; line-height: 1; opacity: 1; transform: translateZ(0); } /* Hand itself always visible in wrapper */
+        /* Keyframes remain the same */
+        @keyframes slideInLeft { from{transform:translateX(-100px);opacity:0}to{transform:translateX(0);opacity:1} }
+        @keyframes slideInRight { from{transform:translateX(100px);opacity:0}to{transform:translateX(0);opacity:1} }
+        @keyframes shake { from{transform:rotate(-5deg)}to{transform:rotate(5deg)} }
+        /* -- END HAND ANIMATION CSS -- */
+
+        #controls { text-align: center; } #controls p { color: #ccc; font-size: 0.9rem; }
+        #choices button, #special-moves button { font-size: 1.3rem; width: 65px; height: 65px; padding: 0.8rem; border: 2px solid #555; border-radius: 12px; background-color: #2b2b2b; margin: 0 0.3rem; transition: all 0.2s ease; cursor: pointer; } #choices button:hover, #special-moves button:hover { transform: translateY(-5px); border-color: var(--primary-color); box-shadow: 0 0 15px var(--primary-color); } #choices button:disabled, #special-moves button:disabled { opacity: 0.3; cursor: not-allowed; transform: none; border-color: #555; box-shadow: none; } #special-moves { margin-top: 0.8rem; } #special-moves button { border: 3px dashed var(--special-color); animation: pulse 1.5s infinite; } @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(159,90,253,0.7)}70%{box-shadow:0 0 0 10px rgba(159,90,253,0)}100%{box-shadow:0 0 0 0 rgba(159,90,253,0)} }
+        #results { font-size: 1rem; min-height: 70px; margin-top: 1rem; color: #ccc; } #round-result { font-size: 1.1rem; font-weight: 700; animation: result-pop 0.3s ease-out; } #special-result { font-size: 0.9rem; font-weight: 700; margin-top: 0.25rem; animation: result-pop 0.3s ease-out; } @keyframes result-pop { from{transform:scale(0.8);opacity:0}to{transform:scale(1);opacity:1} }
+        #special-result.red { color: var(--gambit-red); } #special-result.green { color: var(--gambit-green); } #special-result.purple { color: var(--gambit-purple); }
+        #round-result.win { color: var(--success-color); } #round-result.lose { color: var(--danger-color); } #round-result.tie { color: var(--warning-color); }
+        .hidden { display: none !important; }
+        #clash-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; font-size: 10rem; font-family: 'Cinzel', serif; font-weight: 700; color: var(--danger-color); text-shadow: 0 0 15px white, 0 0 25px var(--danger-color); opacity: 0; z-index: 100; pointer-events: none; } #clash-overlay.animate { animation: clash-zoom 1s forwards; } @keyframes clash-zoom { 0%{transform:scale(0.5);opacity:0}50%{transform:scale(1.2);opacity:1}90%{transform:scale(1);opacity:1}100%{transform:scale(1);opacity:0} }
+        #opponent-status { margin-top: 0.5rem; font-style: italic; color: var(--warning-color); font-size: 0.8rem; }
+
+        /* --- Media Query --- */
+        @media (max-width: 600px) {
+             body { padding: 0.5rem; } #game-container { padding: 1rem; } h1 { font-size: 1.5rem; } h2 { font-size: 1.2rem; } h3 { font-size: 1rem; }
+             .btn { font-size: 1rem; padding: 0.6rem 1rem; } .btn-icon { top: 0.5rem; left: 0.5rem; width: 30px; height: 30px; line-height: 30px; font-size: 1.2rem; }
+             #page-landing .btn { font-size: 1.1rem; padding: 0.8rem 1.5rem; }
+             #page-setup .mode-selection button { font-size: 1rem; padding: 0.6rem 1rem;}
+             #page-setup .action-buttons { display: flex; flex-direction: column; }
+             #page-rules h2 { margin-top: 2.5rem; font-size: 1.5rem; } #page-rules li { padding-left: 1.5rem; font-size: 0.85rem; } #page-rules li::before { font-size: 1.2rem; }
+             #status-bar { flex-direction: column; gap: 0.5rem; } .status-panel { padding: 0.5rem; } .status-panel h2 { font-size: 0.9rem; } .element-icon { font-size: 1rem; top: 0.3rem; right: 0.3rem; } .bar-container { height: 16px; } .bar-label { font-size: 0.7rem; line-height: 16px; }
+             #hand-animation-container { height: 80px; padding: 0 5%; } .hand-wrapper { width: 80px; height: 80px; } .hand-wrapper .hand { font-size: 3rem; }
+             #choices button, #special-moves button { width: 55px; height: 55px; font-size: 1.1rem; padding: 0.5rem; margin: 0 0.2rem; } #controls p { font-size: 0.8rem; } #special-moves { margin-top: 0.5rem; }
+             #results { font-size: 0.9rem; min-height: 60px; } #round-result { font-size: 1rem; } #special-result { font-size: 0.8rem; } #final-result { font-size: 1.8rem; }
+             #clash-overlay { font-size: 5rem; }
+        }
+    </style>
+</head>
+<body>
+    <div id="screen-flash"></div>
+
+    <div id="game-container">
+
+        <div id="page-landing" class="page active">
+            <h1>RPS Battle:<br>God Mode</h1>
+            <button id="btn-ready" class="btn btn-green">Ready?</button>
+        </div>
+
+        <div id="page-rules" class="page">
+             <button id="btn-back-to-landing" class="btn-icon" title="Go Back">&larr;</button>
+             <h2>Rules of the Gambit</h2>
+
+             <h3>The Goal</h3>
+             <ul><li>Defeat your opponent! Both start with 100 HP. Reduce their HP to 0 to win.</li></ul>
+
+             <h3>Game Flow</h3>
+             <ul>
+                 <li><strong>Setup:</strong> Choose AI or Multiplayer, select your Element (🔥💧🌿), and AI difficulty if applicable.</li>
+                 <li><strong>Rounds:</strong> Players choose Rock (✊🪨), Paper (✋📄), or Scissors (✌️✂️).</li>
+                 <li><strong>Gambits:</strong> When your Special Meter reaches 100, Gambit buttons (✊✋✌️) appear. Choosing one uses 100 Special and triggers a random dual-effect.</li>
+                 <li><strong>Victory:</strong> The first player to reduce the opponent's HP to 0 wins!</li>
+             </ul>
+
+             <h3>The Unknown Triangle</h3>
+             <ul><li>Elemental matchups (like 🔥 beats 🌿) are **randomly shuffled** every match and hidden. You must discover the new relationships by attacking!</li></ul>
+
+             <h3>Elemental Combat Resolution</h3>
+             <ul>
+                 <li>Combat is decided by both RPS and the hidden Elemental matchup:
+                   <ul class="rules-sublist">
+                       <li><strong>RPS Win + Element Win = CRITICAL HIT!</strong> (1.5x HP swing, +50 Special to winner)</li>
+                       <li><strong>RPS Win + Element Tie = NORMAL HIT.</strong> (Standard 10 HP swing, builds winner's streak)</li>
+                       <li><strong>RPS Win + Element Lose = DAMPENED HIT.</strong> (0.5x HP swing, flat +10 Special to winner, breaks winner's streak)</li>
+                       <li><strong>RPS Lose + Element Win = RESISTED HIT.</strong> (Loser resists. 0.5x HP swing, loser takes half special penalty)</li>
+                       <li><strong>RPS Lose + Element Tie = NORMAL LOSS.</strong> (Standard 10 HP swing, builds loser's loss streak)</li>
+                       <li><strong>RPS Lose + Element Lose = PUNISHING HIT!</strong> (Loser punished. 1.5x HP swing, loser takes double special penalty)</li>
+                   </ul>
+                 </li>
+                 <li>HP Swing: In Normal hits, winner gains 10 HP, loser loses 10 HP. This amount is modified by Crits, Dampens, Resists, Punishes, and Clashes.</li>
+             </ul>
+
+             <h3>Clash Mechanic</h3>
+             <ul><li>A standard RPS tie (Rock vs Rock, etc.) triggers a **CLASH!** The *next* round's HP swing and Special meter changes are **doubled**. This multiplier increases with consecutive Clashes!</li></ul>
+
+             <h3>Special Meter & Streaks</h3>
+             <ul>
+                 <li>Winning builds your Special Meter and drains your opponent's. Losing does the reverse.</li>
+                 <li>Consecutive wins grant increasing Special bonuses and inflict increasing Special penalties on the loser (e.g., 1st win: +20/-10, 2nd: +30/-15, 3rd: +40/-20...).</li>
+                 <li>Consecutive losses inflict increasing Special penalties on you and grant increasing bonuses to the winner.</li>
+                 <li>Ties break all streaks. Dampened/Resisted hits also break streaks. Critical/Punishing/Normal hits count towards streaks.</li>
+             </ul>
+
+             <h3>Secret Dual-Effect Gambits (Cost: 100 Special)</h3>
+             <ul>
+                 <li>Use ✊, ✋, or ✌️ to unleash a powerful Gambit, randomly chosen from these three, affecting BOTH players:
+                      <ul class="rules-sublist">
+                          <li><strong style="color: var(--gambit-red);">Sacrifice:</strong> You -25HP,+20Sp | Opponent -35HP,+15Sp</li>
+                          <li><strong style="color: var(--gambit-green);">Shared Boon:</strong> You +30HP,+10Sp | Opponent +10HP,+5Sp</li>
+                          <li><strong style="color: var(--gambit-purple);">Meter Burn:</strong> You -15HP,+40Sp | Opponent +10HP,-25Sp</li>
+                      </ul>
+                 </li>
+                 <li>The assignment of Gambits to ✊✋✌️ is shuffled after each use.</li>
+             </ul>
+
+             <h3>Single Player Difficulty</h3>
+               <ul><li>Affects the AI's starting HP (Hardcore only) and how cleverly it chooses its moves and uses Gambits.</li></ul>
+
+
+             <div class="text-center">
+                 <button id="btn-go-to-setup" class="btn btn-green">Start Setup</button>
+             </div>
+        </div>
+
+
+        <div id="page-setup" class="page">
+             <button id="btn-back-to-rules" class="btn-icon" title="Go Back">&larr;</button> <h2>Game Setup</h2>
+
+             <h3>Choose Mode</h3>
+             <div class="mode-selection">
+                 <button id="btn-select-sp" class="btn btn-green selected">Play vs AI</button>
+                 <button id="btn-select-mp" class="btn btn-blue">Multiplayer</button>
+             </div>
+
+             <div class="common-options">
+                 <div class="difficulty-options"> <h3>Choose Difficulty (for AI)</h3>
+                      <div class="selection-group" id="difficulty-selection">
+                          <button data-difficulty="easy">Easy</button>
+                          <button data-difficulty="normal" class="selected">Normal</button>
+                          <button data-difficulty="hardcore">Hardcore</button>
+                      </div>
+                 </div>
+
+                 <h3>Choose Your Element</h3>
+                 <div class="selection-group" id="element-selection">
+                     <button data-element="fire" class="elem-fire selected">🔥 Fire</button>
+                     <button data-element="water" class="elem-water">💧 Water</button>
+                     <button data-element="grass" class="elem-grass">🌿 Grass</button>
+                 </div>
+             </div>
+
+             <div class="multiplayer-options hidden">
+                 <h3>Multiplayer</h3>
+                 <div class="input-group">
+                      <button id="btn-create-room" class="btn btn-green">Create Room</button>
+                 </div>
+                  <p>OR</p>
+                 <div class="input-group">
+                      <label for="room-id-input">Enter Room ID:</label>
+                      <input type="text" id="room-id-input" maxlength="6" placeholder="e.g., abc123">
+                      <button id="btn-join-room" class="btn btn-blue">Join Room</button>
+                 </div>
+                 <div id="waiting-message" class="hidden">Waiting...</div>
+             </div>
+
+             <div id="error-message"></div>
+
+             <div class="action-buttons">
+                  <button id="btn-start-battle" class="btn btn-green">Start AI Battle</button>
+             </div>
+         </div>
+
+
+        <div id="page-game" class="page">
+            <div id="clash-overlay" class="hidden">CLASH!</div>
+            <button id="btn-back-to-home-from-game" class="btn-icon" title="Quit to Menu">&larr;</button> <div id="status-bar">
+                <div id="player-panel" class="status-panel"> <span id="player-element-icon" class="element-icon"></span> <h2>You</h2> <div id="player-hp-bar" class="bar-container"><div class="bar-label" id="player-hp-text">100/100</div><div class="bar-fill"></div></div> <div id="player-special-bar" class="bar-container"><div class="bar-label" id="player-special-text">0/100</div><div class="bar-fill"></div></div> </div>
+                <div id="opponent-panel" class="status-panel"> <span id="opponent-element-icon" class="element-icon"></span> <h2 id="opponent-name">Opponent</h2> <div id="opponent-hp-bar" class="bar-container"><div class="bar-label" id="opponent-hp-text">100/100</div><div class="bar-fill"></div></div> <div id="opponent-special-bar" class="bar-container"><div class="bar-label" id="opponent-special-text">0/100</div><div class="bar-fill"></div></div> </div>
+            </div>
+            <div id="hand-animation-container"> <div id="player-hand-wrapper" class="hand-wrapper"><span id="player-hand" class="hand">✊</span></div> <div id="opponent-hand-wrapper" class="hand-wrapper"><span id="opponent-hand" class="hand">✊</span></div> </div>
+            <div id="controls"> <p id="controls-prompt">Make your choice:</p> <div id="choices"> <button data-choice="rock">🪨</button> <button data-choice="paper">📄</button> <button data-choice="scissors">✂️</button> </div> <div id="special-moves" class="hidden"> <p>GAMBIT READY!</p> <button data-choice="rock" data-special="true">✊</button> <button data-choice="paper" data-special="true">✋</button> <button data-choice="scissors" data-special="true">✌️</button> </div> </div>
+            <div id="results"> <p id="round-result"></p> <p id="special-result"></p> <div id="opponent-status"></div> <div id="final-result"></div> <button id="play-again" class="btn btn-green hidden">Play Again?</button> </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Socket.IO Connection ---
+        let socket = io({ autoConnect: false });
+        let currentRoomId = null;
+        let myPlayerId = null;
+        let isMultiplayer = false;
+
+        // --- CONFIG ---
+        const START_HP = 100; const NORMAL_DAMAGE = 10; const CRIT_DAMAGE = 15; const RESIST_DAMAGE = 5; const SPECIAL_COST = 100; const CRIT_SPECIAL_CHARGE = 50; const BASE_SPECIAL_CHARGE = 20; const BASE_SPECIAL_LOSS = 10; const CONSECUTIVE_WIN_START_BONUS = 30; const CONSECUTIVE_WIN_STACK_BONUS = 10; const CONSECUTIVE_LOSS_START_PENALTY = 15; const CONSECUTIVE_LOSS_STACK_PENALTY = 5;
+        const GAMBITS = { 'gambit_red': { text: "Sacrifice: You -25HP,+20Sp | Opp -35HP,+15Sp" }, 'gambit_green': { text: "Shared Boon: You +30HP,+10Sp | Opp +10HP,+5Sp" }, 'gambit_purple': { text: "Meter Burn: You -15HP,+40Sp | Opp +10HP,-25Sp" } };
+        const GAMBIT_KEYS = Object.keys(GAMBITS); const ELEMENTS = ['fire', 'water', 'grass']; const CHOICES = ['rock', 'paper', 'scissors'];
+
+        // --- CLIENT SP GAME STATE ---
+        let sp_player = {}; let sp_opponent = {}; let sp_gameState = {};
+
+        // --- HTML REFERENCES ---
+        const allPages = document.querySelectorAll('.page'); const btnReady = document.getElementById('btn-ready'); const btnBackToLanding = document.getElementById('btn-back-to-landing'); const btnGoToSetup = document.getElementById('btn-go-to-setup'); const btnBackToRules = document.getElementById('btn-back-to-rules'); const btnSelectSP = document.getElementById('btn-select-sp'); const btnSelectMP = document.getElementById('btn-select-mp'); const btnStartBattle = document.getElementById('btn-start-battle'); const multiplayerOptionsDiv = document.querySelector('.multiplayer-options'); const difficultyOptionsDiv = document.querySelector('.difficulty-options'); const btnBackToHomeFromGame = document.getElementById('btn-back-to-home-from-game'); const btnCreateRoom = document.getElementById('btn-create-room'); const btnJoinRoom = document.getElementById('btn-join-room'); const roomIdInput = document.getElementById('room-id-input'); const roomIdDisplay = document.getElementById('room-id-display'); const waitingMessage = document.getElementById('waiting-message'); const errorMessage = document.getElementById('error-message'); const difficultySelection = document.getElementById('difficulty-selection'); const elementSelection = document.getElementById('element-selection'); const screenFlash = document.getElementById('screen-flash'); const clashOverlay = document.getElementById('clash-overlay'); const playAgainButton = document.getElementById('play-again'); const playerHpText = document.getElementById('player-hp-text'); const playerHpBar = document.querySelector('#player-hp-bar .bar-fill'); const playerSpecialText = document.getElementById('player-special-text'); const playerSpecialBar = document.querySelector('#player-special-bar .bar-fill'); const playerElementIcon = document.getElementById('player-element-icon'); const opponentPanel = document.getElementById('opponent-panel'); const opponentName = document.getElementById('opponent-name'); const opponentHpText = document.getElementById('opponent-hp-text'); const opponentHpBar = document.querySelector('#opponent-hp-bar .bar-fill'); const opponentSpecialText = document.getElementById('opponent-special-text'); const opponentSpecialBar = document.querySelector('#opponent-special-bar .bar-fill'); const opponentElementIcon = document.getElementById('opponent-element-icon'); const playerHandWrapper = document.getElementById('player-hand-wrapper'); const opponentHandWrapper = document.getElementById('opponent-hand-wrapper'); const playerHandElement = document.getElementById('player-hand'); const opponentHandElement = document.getElementById('opponent-hand'); const normalChoiceButtons = document.querySelectorAll('#choices button'); const specialMoveButtons = document.querySelectorAll('#special-moves button'); const specialMovesDiv = document.getElementById('special-moves'); const controlsPrompt = document.getElementById('controls-prompt'); const roundResultP = document.getElementById('round-result'); const specialResultP = document.getElementById('special-result'); const opponentStatus = document.getElementById('opponent-status'); const finalResultP = document.getElementById('final-result');
+
+        // --- EVENT LISTENERS ---
+        btnReady.addEventListener('click', () => showPage('page-rules'));
+        btnBackToLanding.addEventListener('click', () => showPage('page-landing'));
+        btnGoToSetup.addEventListener('click', () => { setupModeSelection(); showPage('page-setup'); });
+        btnBackToRules.addEventListener('click', () => showPage('page-rules'));
+        btnBackToHomeFromGame.addEventListener('click', handleQuitGame);
+        btnSelectSP.addEventListener('click', setupSinglePlayer);
+        btnSelectMP.addEventListener('click', setupMultiplayer);
+        btnStartBattle.addEventListener('click', handleStartBattle);
+        playAgainButton.addEventListener('click', () => { showPage('page-setup'); setupModeSelection(); if (isMultiplayer && !socket.connected) socket.connect(); });
+        normalChoiceButtons.forEach(button => button.addEventListener('click', () => handlePlayerInput(button.dataset.choice, false)));
+        specialMoveButtons.forEach(button => button.addEventListener('click', () => handlePlayerInput(button.dataset.choice, true)));
+        difficultySelection.addEventListener('click', handleSelection);
+        elementSelection.addEventListener('click', handleSelection);
+        btnCreateRoom.addEventListener('click', handleCreateRoom);
+        btnJoinRoom.addEventListener('click', handleJoinRoom);
+
+        function handlePlayerInput(choice, isSpecial) { if (isMultiplayer) { sendMove(choice, isSpecial); } else { playRound_SP(choice, isSpecial); } }
+        function handleQuitGame() { const inGame = document.getElementById('page-game').classList.contains('active'); if (isMultiplayer && currentRoomId && inGame) { if (confirm("Quit match?")) { socket.disconnect(); showPage('page-setup'); currentRoomId = null; setupModeSelection();} } else { showPage('page-setup'); setupModeSelection(); if(sp_gameState) sp_gameState.game_over = true; } }
+        function handleSelection(e) { if (e.target.tagName === 'BUTTON') { e.currentTarget.querySelector('.selected')?.classList.remove('selected'); e.target.classList.add('selected'); } }
+        function getSelectedOption(selector) { return document.querySelector(`${selector} button.selected`)?.dataset || {}; }
+
+        // --- SOCKET.IO EVENT HANDLERS ---
+        socket.on('connect', () => { myPlayerId = socket.id; console.log('Connected:', socket.id); errorMessage.textContent = ''; });
+        socket.on('disconnect', () => { const stillOnGamePage = document.getElementById('page-game').classList.contains('active'); const notSpGameOver = !sp_gameState || !sp_gameState.game_over; if(isMultiplayer && currentRoomId && stillOnGamePage && notSpGameOver) { showPage('page-setup'); errorMessage.textContent = 'Disconnected.'; setupModeSelection(); } currentRoomId = null; console.log('Disconnected'); });
+        socket.on('errorMsg', (msg) => { errorMessage.textContent = msg; waitingMessage.classList.add('hidden'); });
+        // Correctly update waiting message text and visibility
+        socket.on('roomCreated', ({ roomId }) => {
+             console.log('Event: roomCreated received', roomId);
+             currentRoomId = roomId;
+             if (roomIdDisplay) roomIdDisplay.textContent = roomId;
+             else console.error("roomIdDisplay element not found!"); // Debugging
+             if (waitingMessage) {
+                 waitingMessage.textContent = `Waiting for opponent... Room ID: ${roomId}`; // Set text explicitly
+                 waitingMessage.classList.remove('hidden'); // Make sure it's visible
+             } else { console.error("waitingMessage element not found!"); }
+             if (errorMessage) errorMessage.textContent = '';
+        });
+        socket.on('startGame', (initialState) => {
+            console.log('Event: startGame received', initialState);
+            if (!isMultiplayer) { console.log("Ignoring MP startGame in SP mode."); return; }
+            currentRoomId = initialState.roomId; errorMessage.textContent = ''; waitingMessage.classList.add('hidden');
+            console.log("Calling initializeGameUI for MP"); initializeGameUI(initialState);
+            console.log("Showing page-game for MP"); showPage('page-game'); // CRITICAL
+        });
+        socket.on('gameStateUpdate', (updateData) => {
+            if(!isMultiplayer || !currentRoomId) return;
+            console.log('MP Update:', updateData);
+            // Store data, let animateTurn handle the update after animation delay
+            window.latestServerUpdate = updateData;
+            animateTurn(updateData.turnResult);
+            // Enable buttons moved to end of animateTurn
+        });
+        socket.on('opponentMoved', () => { if(isMultiplayer) opponentStatus.textContent = "Opponent has moved!"; });
+        socket.on('opponentDisconnected', () => { if(isMultiplayer) { showPage('page-setup'); errorMessage.textContent = 'Opponent disconnected.'; setupModeSelection();} currentRoomId = null; console.log('Opponent disconnected'); });
+        socket.on('gameOver', ({ winnerId }) => { if(isMultiplayer) { displayGameOver(winnerId); enableButtons(false, true); playAgainButton.classList.remove('hidden'); console.log('MP Game Over! Winner:', winnerId); }});
+
+        // --- PAGE NAVIGATION ---
+        function showPage(pageId) { console.log("Showing page:", pageId); allPages.forEach(page => page.classList.toggle('active', page.id === pageId)); if (pageId === 'page-landing' || pageId === 'page-setup') { document.body.className = ''; } }
+
+        // --- SETUP PAGE LOGIC ---
+        function setupModeSelection() {
+            errorMessage.textContent = ''; waitingMessage.classList.add('hidden'); roomIdInput.value = ''; currentRoomId = null;
+            if (socket.connected && !isMultiplayer) { socket.disconnect(); }
+            setupSinglePlayerVisuals();
+            isMultiplayer = false;
+        }
+
+        function setupSinglePlayerVisuals(){
+             btnSelectSP.classList.add('selected'); btnSelectMP.classList.remove('selected');
+             difficultyOptionsDiv.classList.remove('hidden'); // Show difficulty
+             multiplayerOptionsDiv.classList.add('hidden'); // Hide MP
+             btnStartBattle.textContent = "Start AI Battle";
+             btnStartBattle.classList.remove('hidden'); // Show start
+        }
+
+        function setupMultiplayerVisuals(){
+             btnSelectSP.classList.remove('selected'); btnSelectMP.classList.add('selected');
+             difficultyOptionsDiv.classList.add('hidden'); // Hide difficulty
+             multiplayerOptionsDiv.classList.remove('hidden'); // Show MP
+             btnStartBattle.classList.add('hidden'); // Hide generic start
+        }
+
+        function setupSinglePlayer() {
+             console.log("Setting up Single Player Mode..."); isMultiplayer = false;
+             if (socket.connected) { socket.disconnect(); console.log("Disconnected socket for SP."); }
+             setupSinglePlayerVisuals();
+             errorMessage.textContent = ''; waitingMessage.classList.add('hidden');
+        }
+
+        function setupMultiplayer() {
+            console.log("Setting up Multiplayer Mode..."); isMultiplayer = true;
+            if (!socket.connected) { console.log("Connecting socket..."); socket.connect(); } else { console.log("Socket already connected."); }
+            setupMultiplayerVisuals();
+            errorMessage.textContent = ''; waitingMessage.classList.add('hidden');
+        }
+
+        // --- START BATTLE LOGIC ---
+        function handleStartBattle() {
+             errorMessage.textContent = '';
+             if (isMultiplayer) {
+                 console.log("Error: Start Battle clicked in MP mode.");
+                 errorMessage.textContent = "Please use 'Create Room' or 'Join Room'.";
+             } else {
+                 startSinglePlayerGame(); // Start SP game when button clicked
+             }
+        }
+
+        // --- MULTIPLAYER ROOM FUNCTIONS ---
+        function handleCreateRoom() { if (!isMultiplayer) setupMultiplayer(); const element = getSelectedOption('#element-selection').element || 'fire'; if (!socket.connected) { errorMessage.textContent = "Connecting..."; socket.connect(); setTimeout(handleCreateRoom, 500); return; } socket.emit('createRoom', { element }); errorMessage.textContent = ''; console.log("Create room requested"); waitingMessage.classList.remove('hidden'); waitingMessage.textContent = 'Creating room...';}
+        function handleJoinRoom() { if (!isMultiplayer) setupMultiplayer(); const roomId = roomIdInput.value.trim().toLowerCase(); const element = getSelectedOption('#element-selection').element || 'fire'; if (!roomId) { errorMessage.textContent = 'Please enter a Room ID.'; return; } if (!socket.connected) { errorMessage.textContent = "Connecting..."; socket.connect(); setTimeout(handleJoinRoom, 500); return; } socket.emit('joinRoom', { roomId, element }); errorMessage.textContent = ''; console.log(`Join room ${roomId} requested`); }
+        function sendMove(choice, isSpecial) { if (!currentRoomId || !isMultiplayer) return; socket.emit('playerMove', { roomId: currentRoomId, choice, isSpecial }); enableButtons(false); controlsPrompt.textContent = "Waiting for opponent..."; opponentStatus.textContent = ""; console.log(`MP Sent move: ${choice}, Special: ${isSpecial}`); }
+        function updateUIFromServer(updateData) {
+            // This function is now only responsible for applying the *data* from the server
+            // It will be called *after* the animation delay in animateTurn
+            console.log("Applying server data to UI:", updateData);
+            const myData = updateData.players.find(p => p.id === myPlayerId);
+            const oppData = updateData.players.find(p => p.id !== myPlayerId);
+            if (myData) updatePlayerUI(myData, true); else console.warn("My player data not found in update");
+            if (oppData) updatePlayerUI(oppData, false); else console.warn("Opponent player data not found in update");
+            // Result texts are now set in animateTurn
+            opponentStatus.textContent = ""; controlsPrompt.textContent = "Make your choice:";
+            // Special button visibility update
+            if (myData && myData.special >= SPECIAL_COST && !updateData.gameOver) { specialMovesDiv.classList.remove('hidden'); }
+            else { specialMovesDiv.classList.add('hidden'); }
+            // Background update
+            document.body.className = '';
+            if (myData && myData.hp <= 30 && !updateData.gameOver) { document.body.classList.add('low-hp'); }
+            // TODO: Add streak background updates based on streak data from server if needed
+        }
+
+
+        // --- SINGLE PLAYER GAME FUNCTIONS ---
+        function startSinglePlayerGame() {
+            console.log("Starting Single Player Game Logic...");
+            isMultiplayer = false;
+            if (socket.connected) { socket.disconnect(); }
+
+            const difficulty = getSelectedOption('#difficulty-selection').difficulty || 'normal';
+            const playerElement = getSelectedOption('#element-selection').element || 'fire';
+            const otherElements = ELEMENTS.filter(e => e !== playerElement); const computerElement = otherElements[Math.floor(Math.random() * otherElements.length)];
+            sp_player = { id: 'player', element: playerElement, hp: START_HP, special: 0, consecutiveWins: 0, consecutiveLosses: 0, gambitAssignments: {}, currentMove: null, maxHp: START_HP };
+            const isHardcore = difficulty === 'hardcore';
+            sp_opponent = { id: 'computer', element: computerElement, hp: START_HP + (isHardcore ? 10 : 0), special: 0, consecutiveWins: 0, consecutiveLosses: 0, gambitAssignments: {}, currentMove: null, maxHp: START_HP + (isHardcore ? 10 : 0) };
+            sp_gameState = { difficulty: difficulty, elementalTriangle: {}, clashMultiplier: 1, game_over: false, roundResultText: 'First round... Fight!', specialResultText: '' };
+            shuffleElementalTriangle_SP(); shuffleGambits_SP(true); shuffleGambits_SP(false);
+            const initialState = { players: [sp_player, sp_opponent], gameState: { difficulty: sp_gameState.difficulty, roundResultText: sp_gameState.roundResultText } };
+            console.log("Calling initializeGameUI for SP"); initializeGameUI(initialState);
+            opponentName.textContent = "Computer";
+            console.log("Showing page-game for SP"); showPage('page-game');
+        }
+
+        async function playRound_SP(player_choice, player_is_special) {
+             if (sp_gameState.game_over) return;
+             console.log(`SP Round: Player chose ${player_choice} (Special: ${player_is_special})`);
+             enableButtons(false);
+             roundResultP.textContent = ''; specialResultP.textContent = ''; specialResultP.className = 'special-result';
+             controlsPrompt.textContent = "Computer thinking...";
+
+             const { computer_choice, computer_is_special } = computerAI_SP();
+             console.log(`SP Round: Computer chose ${computer_choice} (Special: ${computer_is_special})`);
+
+             let gambitEffects = { p1: null, p2: null };
+             let gambitTextP1 = '', gambitTextP2 = ''; // Store gambit text separately
+             if (player_is_special) { const gambitKey = sp_player.gambitAssignments[player_choice]; gambitEffects.p1 = applyGambit_SP(gambitKey, true); if(gambitEffects.p1) { gambitTextP1 = gambitEffects.p1.text; } sp_player.special = Math.max(0, sp_player.special - SPECIAL_COST); shuffleGambits_SP(true); }
+             if (computer_is_special) { const gambitKey = sp_opponent.gambitAssignments[computer_choice]; gambitEffects.p2 = applyGambit_SP(gambitKey, false); if(gambitEffects.p2) { gambitTextP2 = gambitEffects.p2.text; } sp_opponent.special = Math.max(0, sp_opponent.special - SPECIAL_COST); shuffleGambits_SP(false); }
+
+             // Check game over AFTER gambits, BEFORE shake
+             if (sp_player.hp <= 0 || sp_opponent.hp <= 0) { updateUI_SP(); endGame_SP(); return; }
+
+             // Start shake
+             playerHandElement.textContent = '✊'; opponentHandElement.textContent = '✊'; playerHandWrapper.classList.add('shaking'); opponentHandWrapper.classList.add('shaking');
+             await new Promise(resolve => setTimeout(resolve, 1000));
+
+             // Resolve combat internally
+              const combatResult = resolveCombat_SP(player_choice, computer_choice);
+              sp_gameState.roundResultText = combatResult.result_text;
+              // Combine gambit text with combat special text AFTER combat is resolved
+              sp_gameState.specialResultText = (gambitTextP1 || gambitTextP2 || '') + (combatResult.special_text ? ` | ${combatResult.special_text}` : '');
+              sp_gameState.specialResultText = sp_gameState.specialResultText.replace(/^ \| /, ''); // Clean up leading separator
+
+
+             // Stop shake & Reveal hands
+             playerHandWrapper.classList.remove('shaking'); opponentHandWrapper.classList.remove('shaking');
+             playerHandElement.textContent = getEmoji(player_choice, true); opponentHandElement.textContent = getEmoji(computer_choice, true);
+
+             // Animate turn, which will call updateUI_SP after delay
+             animateTurn({ p1Id: sp_player.id, p2Id: sp_opponent.id, p1Move: player_choice, p2Move: computer_choice, gambitEffects: gambitEffects, combatResultText: combatResult.result_text, specialChangeText: combatResult.special_text, isClash: combatResult.isClash });
+
+             // Check game over AFTER animation might have updated UI (or rely on animateTurn's update)
+             // Let's check here again for safety, using the already updated state
+             if (sp_player.hp <= 0 || sp_opponent.hp <= 0) {
+                 // Use a slight delay to ensure UI updates finish before ending
+                 setTimeout(endGame_SP, 700); // Wait slightly longer than animation delay
+             } else {
+                 // Enable buttons moved to end of animateTurn
+             }
+         }
+        // --- SINGLE PLAYER LOGIC (Mirrors Server) ---
+        function resolveCombat_SP(p_choice, c_choice) { let p_damage=0,c_damage=0,p_heal=0,c_heal=0;let result_text="",special_text="";let isClash=false;const rps_result=getRPSResult(p_choice,c_choice);const elem_result=getElementResult_SP(sp_player.element,sp_opponent.element);if(rps_result==='tie'){sp_gameState.clashMultiplier++;result_text=`CLASH! Next round is worth ${sp_gameState.clashMultiplier}x!`;isClash=true;if(sp_player.consecutiveWins>0||sp_player.consecutiveLosses>0||sp_opponent.consecutiveWins>0||sp_opponent.consecutiveLosses>0)special_text+=" Streak broken!";sp_player.consecutiveWins=0;sp_player.consecutiveLosses=0;sp_opponent.consecutiveWins=0;sp_opponent.consecutiveLosses=0;}else{let charge=0,penalty=0,hp_swing=0;let winnerPlayer,loserPlayer,winnerIsPlayer;if(rps_result==='win'){winnerPlayer=sp_player;loserPlayer=sp_opponent;winnerIsPlayer=true;}else{winnerPlayer=sp_opponent;loserPlayer=sp_player;winnerIsPlayer=false;} loserPlayer.consecutiveWins=0;winnerPlayer.consecutiveWins++;loserPlayer.consecutiveLosses++;const winnerElemResult=winnerIsPlayer?elem_result:(elem_result==='win'?'lose':(elem_result==='lose'?'win':'tie'));if(winnerElemResult==='win'){hp_swing=CRIT_DAMAGE;charge=CRIT_SPECIAL_CHARGE;penalty=BASE_SPECIAL_LOSS*2;result_text=winnerIsPlayer?"CRITICAL HIT!":"Computer CRITICAL HIT!";}else if(winnerElemResult==='tie'){hp_swing=NORMAL_DAMAGE;charge=calculateStreakCharge(winnerPlayer.consecutiveWins);penalty=calculateStreakPenalty(loserPlayer.consecutiveLosses);result_text=winnerIsPlayer?"You win!":"Computer wins!";}else{hp_swing=RESIST_DAMAGE;charge=10;penalty=0;winnerPlayer.consecutiveWins=0;loserPlayer.consecutiveLosses=0;result_text=winnerIsPlayer?"DAMPENED HIT!":"You RESISTED!";} charge=Math.round(charge*sp_gameState.clashMultiplier);penalty=Math.round(penalty*sp_gameState.clashMultiplier);hp_swing=Math.round(hp_swing*sp_gameState.clashMultiplier);if(winnerIsPlayer){p_heal=hp_swing;c_damage=hp_swing;sp_player.special=Math.min(100,sp_player.special+charge);sp_opponent.special=Math.max(0,sp_opponent.special-penalty);special_text+=` You +${charge} Sp! (Opp -${penalty} Sp)`;if(sp_player.consecutiveWins>1&&winnerElemResult!=='lose')special_text+=` (${sp_player.consecutiveWins}x win!)`;}else{c_heal=hp_swing;p_damage=hp_swing;sp_opponent.special=Math.min(100,sp_opponent.special+charge);sp_player.special=Math.max(0,sp_player.special-penalty);special_text+=` You -${penalty} Sp! (Opp +${charge} Sp)`;if(sp_opponent.consecutiveWins>1&&winnerElemResult!=='win')special_text+=` (${sp_opponent.consecutiveWins}x win!)`;} sp_gameState.clashMultiplier=1;result_text+=` (±${hp_swing} HP)`;} sp_player.hp=Math.min(sp_player.maxHp,Math.max(0,sp_player.hp-p_damage+p_heal));sp_opponent.hp=Math.min(sp_opponent.maxHp,Math.max(0,sp_opponent.hp-c_damage+c_heal));return{result_text:result_text.trim(),special_text:special_text.trim(),isClash:isClash}; }
+        function computerAI_SP() { let computer_choice="";let computer_is_special=false;const difficulty=sp_gameState.difficulty;switch(difficulty){case 'easy':computer_choice=CHOICES[Math.floor(Math.random()*3)];break;case 'normal':if(sp_opponent.special>=SPECIAL_COST&&Math.random()<0.8){computer_is_special=true;computer_choice=CHOICES[Math.floor(Math.random()*3)];}else{if(sp_opponent.consecutiveWins>=2&&Math.random()<0.6)computer_choice="scissors";else computer_choice=CHOICES[Math.floor(Math.random()*3)];}break;case 'hardcore':if(sp_opponent.special>=SPECIAL_COST){computer_is_special=true;computer_choice=CHOICES[Math.floor(Math.random()*3)];}else{if(Math.random()<0.9){if(lastPlayerChoice==='rock')computer_choice='paper';else if(lastPlayerChoice==='paper')computer_choice='scissors';else computer_choice='rock';}else{computer_choice=CHOICES[Math.floor(Math.random()*3)];}}break;} return{computer_choice,computer_is_special}; }
+        function applyGambit_SP(gambitKey, isPlayer) { const gambitData=GAMBITS[gambitKey];if(!gambitData)return null;flashScreen();let userHpChange=0,userSpChange=0,oppHpChange=0,oppSpChange=0;switch(gambitKey){case 'gambit_red':userHpChange=-25;userSpChange=20;oppHpChange=-35;oppSpChange=15;break;case 'gambit_green':userHpChange=30;userSpChange=10;oppHpChange=10;oppSpChange=5;break;case 'gambit_purple':userHpChange=-15;userSpChange=40;oppHpChange=10;oppSpChange=-25;break;} if(isPlayer){sp_player.hp=Math.min(sp_player.maxHp,Math.max(0,sp_player.hp+userHpChange));sp_player.special=Math.max(0,Math.min(100,sp_player.special+userSpChange));sp_opponent.hp=Math.min(sp_opponent.maxHp,Math.max(0,sp_opponent.hp+oppHpChange));sp_opponent.special=Math.max(0,Math.min(100,sp_opponent.special+oppSpChange));specialResultP.textContent=`You hit: ${gambitData.text}`;}else{sp_opponent.hp=Math.min(sp_opponent.maxHp,Math.max(0,sp_opponent.hp+userHpChange));sp_opponent.special=Math.max(0,Math.min(100,sp_opponent.special+userSpChange));sp_player.hp=Math.min(sp_player.maxHp,Math.max(0,sp_player.hp+oppHpChange));sp_player.special=Math.max(0,Math.min(100,sp_player.special+oppSpChange));specialResultP.textContent=`Computer hit: ${gambitData.text}`;} addGambitColorClass(gambitKey);return{key:gambitKey,text:gambitData.text}; }
+        function shuffleGambits_SP(isPlayer) { let shuffledGambits=[...GAMBIT_KEYS];for(let i=shuffledGambits.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[shuffledGambits[i],shuffledGambits[j]]=[shuffledGambits[j],shuffledGambits[i]];} const assignments={'rock':shuffledGambits[0],'paper':shuffledGambits[1],'scissors':shuffledGambits[2]};if(isPlayer)sp_player.gambitAssignments=assignments;else sp_opponent.gambitAssignments=assignments; }
+        function shuffleElementalTriangle_SP() { let shuffledElements=[...ELEMENTS];for(let i=shuffledElements.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[shuffledElements[i],shuffledElements[j]]=[shuffledElements[j],shuffledElements[i]];} sp_gameState.elementalTriangle={[shuffledElements[0]]:shuffledElements[1],[shuffledElements[1]]:shuffledElements[2],[shuffledElements[2]]:shuffledElements[0]}; }
+        function getElementResult_SP(p1_elem, p2_elem) { const triangle=sp_gameState.elementalTriangle;if(!triangle||!p1_elem||!p2_elem)return 'tie';if(p1_elem===p2_elem)return 'tie';if(triangle[p1_elem]===p2_elem)return 'win';return 'lose'; }
+        function updateUI_SP() { updatePlayerUI(sp_player, true); updatePlayerUI(sp_opponent, false); roundResultP.textContent = sp_gameState.roundResultText || ''; specialResultP.textContent = sp_gameState.specialResultText || ''; if (sp_player.special >= SPECIAL_COST && !sp_gameState.game_over) { specialMovesDiv.classList.remove('hidden'); } else { specialMovesDiv.classList.add('hidden'); } document.body.className = ''; if (sp_player.hp <= 30 && !sp_gameState.game_over) { document.body.classList.add('low-hp'); } /* TODO: SP streak bg */ }
+        function endGame_SP() { if(sp_gameState.game_over) return; sp_gameState.game_over = true; enableButtons(false, true); playAgainButton.classList.remove('hidden'); if (!specialResultP.textContent.includes('Gambit') && !roundResultP.textContent.includes('CLASH')) { specialResultP.textContent = "Game Over!"; } if (sp_player.hp <= 0 && sp_opponent.hp <= 0) { finalResultP.textContent = "DRAW GAME!"; finalResultP.className = 'final-result tie'; } else if (sp_player.hp <= 0) { finalResultP.textContent = "DEFEAT!"; finalResultP.className = 'final-result lose'; } else if (sp_opponent.hp <= 0) { finalResultP.textContent = "VICTORY!"; finalResultP.className = 'final-result win'; } }
+
+
+        // --- SHARED HELPER FUNCTIONS ---
+        function initializeGameUI(initialState) {
+            console.log("Initializing Game UI");
+            const myData = isMultiplayer ? initialState.players.find(p => p.id === myPlayerId) : initialState.players.find(p => p.id === 'player');
+            const oppData = isMultiplayer ? initialState.players.find(p => p.id !== myPlayerId) : initialState.players.find(p => p.id === 'computer');
+            if (!myData || !oppData) { console.error("Init Error: Data missing."); showPage('page-setup'); setupModeSelection(); errorMessage.textContent = "Error initializing."; return; }
+
+            updatePlayerUI(myData, true); updatePlayerUI(oppData, false);
+            playerElementIcon.textContent = getElementEmoji(myData.element); opponentElementIcon.textContent = getElementEmoji(oppData.element);
+            opponentName.textContent = isMultiplayer ? "Opponent" : "Computer";
+            roundResultP.textContent = initialState.gameState.roundResultText || 'Fight!';
+            specialResultP.textContent = ''; finalResultP.textContent = ''; playAgainButton.classList.add('hidden');
+            playerHandElement.textContent = '✊'; opponentHandElement.textContent = '✊';
+
+            // Reset wrappers FIRST, remove animation class, THEN add class after slight delay
+            playerHandWrapper.classList.remove('animate-in'); opponentHandWrapper.classList.remove('animate-in');
+            playerHandWrapper.style.opacity = '0'; opponentHandWrapper.style.opacity = '0'; // Reset opacity
+            playerHandWrapper.style.transform = 'translateX(-100px) translateZ(0)'; // Reset position
+            opponentHandWrapper.style.transform = 'translateX(100px) translateZ(0)'; // Reset position
+
+            requestAnimationFrame(() => { // Use rAF for smoother start
+                 playerHandWrapper.classList.add('animate-in');
+                 opponentHandWrapper.classList.add('animate-in');
+            });
+            enableButtons(true);
+            console.log("Game UI Initialized.");
+        }
+        function updatePlayerUI(playerData, isSelf) { const hpText=isSelf?playerHpText:opponentHpText; const hpBar=isSelf?playerHpBar:opponentHpBar; const spText=isSelf?playerSpecialText:opponentSpecialText; const spBar=isSelf?playerSpecialBar:opponentSpecialBar; if(!playerData){console.error("updatePlayerUI invalid data for", isSelf?"self":"opp"); return;} hpText.textContent=`${playerData.hp} / ${playerData.maxHp}`; hpBar.style.width=`${Math.max(0,(playerData.hp/playerData.maxHp)*100)}%`; spText.textContent=`${playerData.special} / ${SPECIAL_COST}`; spBar.style.width=`${Math.min(100,Math.max(0,(playerData.special/SPECIAL_COST)*100))}%`; }
+
+        async function animateTurn(turnResult) {
+            if (!turnResult) { console.warn("animateTurn called with no turnResult"); return; }
+            console.log("Animating turn:", turnResult);
+
+            // 1. Shake Hands
+            playerHandElement.textContent = '✊'; opponentHandElement.textContent = '✊';
+            playerHandWrapper.classList.add('shaking'); opponentHandWrapper.classList.add('shaking');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // 2. Stop Shake & Reveal Hands
+            playerHandWrapper.classList.remove('shaking'); opponentHandWrapper.classList.remove('shaking');
+            const myTurnId = isMultiplayer ? myPlayerId : 'player';
+            const p1IdFromServer = turnResult.p1Id;
+            const myMove = (p1IdFromServer === myTurnId) ? turnResult.p1Move : turnResult.p2Move;
+            const oppMove = (p1IdFromServer === myTurnId) ? turnResult.p2Move : turnResult.p1Move;
+            playerHandElement.textContent = getEmoji(myMove, true) || '❓';
+            opponentHandElement.textContent = getEmoji(oppMove, true) || '❓';
+
+            // --- TIMING CHANGE ---
+            // 3. SHORT DELAY after reveal before showing results
+            await new Promise(resolve => setTimeout(resolve, 600));
+
+            // 4. Update UI Text and Bars NOW
+            if(isMultiplayer && window.latestServerUpdate) {
+                console.log("Applying stored MP update post-animation");
+                updateUIFromServer(window.latestServerUpdate);
+                window.latestServerUpdate = null; // Clear stored data
+            } else if (!isMultiplayer) {
+                console.log("Applying SP update post-animation");
+                updateUI_SP(); // Update UI with latest SP state
+            } else {
+                 console.warn("Could not apply UI update post-animation - missing data or mode mismatch");
+            }
+            // Display results text AFTER updating bars
+            roundResultP.textContent = turnResult.combatResultText || '';
+            specialResultP.textContent = turnResult.specialChangeText || '';
+            // --- END TIMING CHANGE ---
+
+            // 5. Trigger Clash/Gambit Visuals
+            if (turnResult.isClash) { triggerClashOverlay(); }
+
+            const p1Gambit = turnResult.gambitEffects?.p1;
+            const p2Gambit = turnResult.gambitEffects?.p2;
+            const myGambitKey = (p1IdFromServer === myTurnId) ? (p1Gambit ? p1Gambit.key : null) : (p2Gambit ? p2Gambit.key : null);
+            const oppGambitKey = (p1IdFromServer === myTurnId) ? (p2Gambit ? p2Gambit.key : null) : (p1Gambit ? p1Gambit.key : null);
+            const primaryGambitKey = myGambitKey || oppGambitKey;
+
+            if (primaryGambitKey) {
+                 flashScreen();
+                 addGambitColorClass(primaryGambitKey);
+                 const gambitText = GAMBITS[primaryGambitKey]?.text || '';
+                 // Combine gambit text and special change text
+                 specialResultP.textContent = gambitText + (turnResult.specialChangeText ? ` | ${turnResult.specialChangeText}` : '');
+                 specialResultP.textContent = specialResultP.textContent.replace(/^ \| /, ''); // Clean up start
+            } else {
+                specialResultP.className = 'special-result'; // Reset color
+                specialResultP.textContent = turnResult.specialChangeText || ''; // Show only special change
+            }
+
+            // 6. Apply Win/Loss coloring
+            roundResultP.classList.remove('win', 'lose', 'tie');
+            const resultText = (roundResultP.textContent || "").toLowerCase();
+            const iAmP1 = p1IdFromServer === myTurnId;
+            // Define win/loss based on player index mentioned in text
+            const p1WinIndicators = ['player 1 wins', 'player 1 critical hit', 'player 1\'s hit was dampened'];
+            const p2WinIndicators = ['player 2 wins', 'player 2 critical hit', 'player 2\'s hit was dampened']; // Assume P2 is opponent
+            const iWon = (iAmP1 && p1WinIndicators.some(kw => resultText.includes(kw))) ||
+                         (!iAmP1 && p2WinIndicators.some(kw => resultText.includes(kw)));
+            // Loss is simply not winning and not a tie/nullify
+            const iLost = !iWon && !resultText.includes('clash') && !resultText.includes('nullified');
+
+            if(resultText.includes('clash') || resultText.includes('nullified')){roundResultP.classList.add('tie');}
+            else if(iWon) {roundResultP.classList.add('win');}
+            else if(iLost) {roundResultP.classList.add('lose');}
+            else { console.warn("Could not determine win/loss state:", resultText); }
+
+            // Enable buttons only if game is not over (check done in enableButtons)
+             if(isMultiplayer && !window.latestServerUpdate?.gameOver) enableButtons(true);
+             else if (!isMultiplayer && !sp_gameState.game_over) enableButtons(true);
+        }
+
+        function displayGameOver(winnerId) { enableButtons(false, true); playAgainButton.classList.remove('hidden'); const isDraw = winnerId === null; const iWon = (isMultiplayer && winnerId === myPlayerId) || (!isMultiplayer && winnerId === 'player'); if (isDraw) { finalResultP.textContent = "DRAW GAME!"; finalResultP.className = 'final-result tie'; } else if (iWon) { finalResultP.textContent = "VICTORY!"; finalResultP.className = 'final-result win'; } else { finalResultP.textContent = "DEFEAT!"; finalResultP.className = 'final-result lose'; } }
+        function calculateStreakCharge(wins) { if(wins<=0)return 0;if(wins===1)return BASE_SPECIAL_CHARGE;if(wins===2)return CONSECUTIVE_WIN_START_BONUS;return CONSECUTIVE_WIN_START_BONUS+(wins-2)*CONSECUTIVE_WIN_STACK_BONUS;} function calculateStreakPenalty(losses){if(losses<=0)return 0;if(losses===1)return BASE_SPECIAL_LOSS;if(losses===2)return CONSECUTIVE_LOSS_START_PENALTY;return CONSECUTIVE_LOSS_START_PENALTY+(losses-2)*CONSECUTIVE_LOSS_STACK_PENALTY;} function getRPSResult(p1,p2){if(p1===p2)return'tie';if((p1==='rock'&&p2==='scissors')||(p1==='paper'&&p2==='rock')||(p1==='scissors'&&p2==='paper'))return'win';return'lose';}
+        function getEmoji(choice, large = false) { if(large){if(choice==='rock')return'✊';if(choice==='paper')return'✋';if(choice==='scissors')return'✌️';}else{if(choice==='rock')return'🪨';if(choice==='paper')return'📄';if(choice==='scissors')return'✂️';}return''; } function getElementEmoji(element) { if(element==='fire')return'🔥';if(element==='water')return'💧';if(element==='grass')return'🌿';return''; } function flashScreen() { screenFlash.classList.add('flash'); setTimeout(()=>{screenFlash.classList.remove('flash');},300); } function triggerClashOverlay() { clashOverlay.classList.remove('hidden'); clashOverlay.classList.add('animate'); setTimeout(()=>{clashOverlay.classList.remove('animate');clashOverlay.classList.add('hidden');},1000); } function addGambitColorClass(gambitKey) { if(!gambitKey)return;specialResultP.classList.remove('red','green','purple');if(gambitKey==='gambit_red')specialResultP.classList.add('red');else if(gambitKey==='gambit_green')specialResultP.classList.add('green');else if(gambitKey==='gambit_purple')specialResultP.classList.add('purple'); }
+        function enableButtons(enabled, keepBackButton = false) { const gameOverState = isMultiplayer ? !currentRoomId : (sp_gameState && sp_gameState.game_over); normalChoiceButtons.forEach(b=>b.disabled=!enabled||gameOverState); specialMoveButtons.forEach(b=>b.disabled=!enabled||gameOverState); btnBackToHomeFromGame.style.display=(enabled || keepBackButton || gameOverState)?'block':'none'; if(gameOverState){ specialMovesDiv.classList.add('hidden'); } else if(enabled && !isMultiplayer){updateUI_SP();} else if (enabled && isMultiplayer){/*updateUI called by gameStateUpdate*/} else {specialMovesDiv.classList.add('hidden');}}
+
+        // --- Initial Setup ---
+        showPage('page-landing'); // Start on LANDING page
+
+    </script>
+</body>
+</html>
