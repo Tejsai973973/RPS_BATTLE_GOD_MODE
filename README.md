@@ -29,9 +29,9 @@ The elemental weakness cycle is **randomly shuffled and hidden** at the start of
 
 | Outcome | RPS Result + Element Result | HP Swing (Base) | Special Boost/Penalty | Streak Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **CRITICAL HIT!** | Win + Element Win | 1.5x (Winner gains/Loser loses) | Winner: **+50** | Builds Streak |
+| **CRITICAL HIT!** | Win + Element Win | 1.5x (Winner gains/Loser loses) | Winner: **Double Boost** | Builds Streak |
 | **NORMAL HIT** | Win + Element Tie | 1.0x (Winner gains/Loser loses) | Builds Streak | Builds Streak |
-| **DAMPENED HIT** | Win + Element Lose | **0.5x** (Winner gains/Loser loses) | Winner: **+10** | **Streak Broken** |
+| **DAMPENED HIT** | Win + Element Lose | **0.5x** (Winner gains/Loser loses) | Winner: **Half Boost** | **Streak Broken** |
 | **RESISTED HIT** | Lose + Element Win | **0.5x** (Loser takes/Winner gains) | Loser: **Half Penalty** | Builds Loss Streak |
 | **PUNISHING HIT!** | Lose + Element Lose | **1.5x** (Loser takes/Winner gains) | Loser: **Double Penalty** | Builds Loss Streak |
 
